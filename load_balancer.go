@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+var httpClient = &http.Client{Timeout: time.Minute}
+
 type request struct {
 	url string
 	res chan<- response
@@ -37,7 +39,7 @@ func newLoadBalancer(scheme, host string) *loadBalancer {
 				// Retry in case of throttling
 			try:
 				for i := 0; i < 3; i++ {
-					r, err := http.Get(req.url)
+					r, err := httpClient.Get(req.url)
 					res := response{
 						err: err,
 					}
@@ -57,12 +59,18 @@ func newLoadBalancer(scheme, host string) *loadBalancer {
 								r.StatusCode,
 								i+1,
 							)
-							if i != 3 {
+							if i < 2 {
 								s += `; retrying in 10s`
+								log.Print(s)
+								time.Sleep(time.Second * 10)
+								continue try
 							}
-							log.Printf(s)
-							time.Sleep(time.Second * 10)
-							continue try
+							log.Print(s)
+							res.err = fmt.Errorf(
+								`GET %s returned status code %d after 3 attempts`,
+								req.url,
+								r.StatusCode,
+							)
 						default:
 							if r.Body != nil {
 								r.Body.Close()
